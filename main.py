@@ -1,21 +1,21 @@
 ﻿import time
 from bots.analyzer import analyze_market
-from bots.bybit_client import get_candles, get_balance
+from bots import bybit_client
 
 def main():
-    print("="*50)
-    print("AUTO BYBIT BOT STARTED (RAILWAY)")
-    print("="*50)
+    print("=" * 50)
+    print("AUTO BYBIT BOT STARTED (RENDER)")
+    print("=" * 50)
 
     while True:
         try:
-            candles = get_candles()
+            candles = bybit_client.get_candles()
             signal = analyze_market(candles)
-            balance = get_balance()
+            balance = bybit_client.get_balance()
 
             print(f"Signal: {signal} | Balance: {balance}")
 
-            time.sleep(30)  # каждые 30 секунд
+            time.sleep(30)
         except Exception as e:
             print("ERROR:", e)
             time.sleep(10)
