@@ -3,7 +3,9 @@ from pybit.unified_trading import HTTP
 
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
-BYBIT_TESTNET = os.getenv("BYBIT_TESTNET", "true").lower() == "true"
+
+# ❗️ЖЁСТКО отключаем testnet
+BYBIT_TESTNET = False
 
 session = HTTP(
     testnet=BYBIT_TESTNET,
