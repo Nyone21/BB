@@ -1,5 +1,7 @@
-pybit
+﻿pybit
 python-dotenv
 pandas
 numpy
 requests
+fastapi
+uvicorn

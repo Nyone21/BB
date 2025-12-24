@@ -1,14 +1,11 @@
-FROM python:3.10-slim
+﻿FROM python:3.10-slim
 
 WORKDIR /app
 
 COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p data logs
-
-CMD ["python", "main.py"]
+EXPOSE 8000
+CMD ["python", "start.py"]
