@@ -110,6 +110,7 @@ def execute_trade(symbol: str, signal: str, price: float, balance: float, mode: 
 
             # Используем риск-менеджмент для определения размера позиции
             from bots.risk_manager import compute_trade_amount
+            from bots.bybit_client import get_balance
             balance = get_balance()
             trade_amount = compute_trade_amount(balance)
             

@@ -26,86 +26,84 @@ state.LIVE = not DRY_RUN
 start_mode = "DRY-RUN" if DRY_RUN else "LIVE"
 send_message(f" AI BOT STARTED ({start_mode})  MODE={state.TRADING_MODE}")
 
-def main_loop():
-    last_report = 0
+def single_run():
+    """
+    Однократный запуск бота для GitHub Actions
+    """
+    try:
+        # Убедимся, что бот включен
+        state.BOT_ENABLED = True
+        
+        balance = get_balance()
+        now = time.time()
 
-    while True:
-        try:
-            if not state.BOT_ENABLED:
-                time.sleep(5)
-                continue
+        for symbol in SYMBOLS:
+            price = get_price(symbol)
+            candles = get_candles(symbol)
 
-            balance = get_balance()
-            now = time.time()
-
-            for symbol in SYMBOLS:
-                price = get_price(symbol)
-                candles = get_candles(symbol)
-
-                raw, ema, closes = analyze_market(candles)
-                ai = ai_filter(raw, price, ema, closes, symbol)
-
-                try:
-                    learning.update_stats()
-                except Exception:
-                    pass
-
-                market_type = os.getenv("MARKET_TYPE", "spot").upper()
-
-                if ai in ("BUY", "SELL"):
-                    from bots.decision import can_trade
-                    can_trade_result, reason = can_trade(candles)
-
-                    if can_trade_result:
-                        result = execute_trade(
-                            symbol=symbol,
-                            signal=ai,
-                            price=price,
-                            balance=balance,
-                            mode=market_type,
-                            dry_run=DRY_RUN,
-                        )
-                        if result:
-                            send_message(result)
-                    else:
-                        if reason in ("LOW_BALANCE", "FLAT_MARKET"):
-                            send_message(f" {symbol}: {reason}")
+            raw, ema, closes = analyze_market(candles)
+            ai = ai_filter(raw, price, ema, closes, symbol)
 
             try:
-                pnl_tracker.check_balance_and_record()
+                learning.update_stats()
             except Exception:
                 pass
 
-            if now - last_report >= TRADE_REPORT_INTERVAL:
-                trades = trade_logger.get_trades_since(last_report)
-                total_pnl = sum(t.get("pnl", 0) for t in trades)
+            market_type = os.getenv("MARKET_TYPE", "spot").upper()
 
-                lines = [
-                    f" TRADE REPORT ({TRADE_REPORT_INTERVAL}s)",
-                    f"Trades: {len(trades)}",
-                    f"PnL: {total_pnl:.4f}",
-                ]
+            if ai in ("BUY", "SELL"):
+                from bots.decision import can_trade
+                can_trade_result, reason = can_trade(candles)
 
-                for t in trades[-10:]:
-                    lines.append(
-                        f"- {t.get('symbol')} {t.get('side')} price={t.get('price')} qty={t.get('qty')}"
+                if can_trade_result:
+                    result = execute_trade(
+                        symbol=symbol,
+                        signal=ai,
+                        price=price,
+                        balance=balance,
+                        mode=market_type,
+                        dry_run=DRY_RUN,
                     )
+                    if result:
+                        send_message(result)
+                else:
+                    if reason in ("LOW_BALANCE", "FLAT_MARKET"):
+                        send_message(f" {symbol}: {reason}")
 
-                send_message("\n".join(lines))
-                last_report = now
-
-            time.sleep(20)
-
+        try:
+            pnl_tracker.check_balance_and_record()
         except Exception:
-            err = traceback.format_exc()
-            print(err)
-            send_message(f" ERROR:\n{err}")
-            time.sleep(10)
+            pass
+
+        # Отправляем отчет каждый запуск (вместо интервала)
+        trades = trade_logger.get_trades_since(now - TRADE_REPORT_INTERVAL)
+        total_pnl = sum(t.get("pnl", 0) for t in trades)
+
+        lines = [
+            f" TRADE REPORT (Single Run)",
+            f"Trades: {len(trades)}",
+            f"PnL: {total_pnl:.4f}",
+        ]
+
+        for t in trades[-10:]:
+            lines.append(
+                f"- {t.get('symbol')} {t.get('side')} price={t.get('price')} qty={t.get('qty')}"
+            )
+
+        send_message("\n".join(lines))
+
+    except Exception:
+        err = traceback.format_exc()
+        print(err)
+        send_message(f" ERROR:\n{err}")
+
 
 def start():
-    tg = threading.Thread(target=telegram_polling, daemon=True)
-    tg.start()
-    main_loop()
+    """
+    Запуск бота для GitHub Actions
+    """
+    # В режиме GitHub Actions не запускаем телеграм-опрос
+    single_run()
 
 if __name__ == "__main__":
     start()
