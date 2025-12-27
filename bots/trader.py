@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 from bots.bybit_client import session, place_futures_order, place_spot_order
-from bots.telegram import send_message
+from bots.telegram import send_message, notify_trade_open, notify_error
 from bots import trade_logger
 from bots import state
 from bots import risk_manager
@@ -34,11 +34,18 @@ def execute_trade(symbol: str, signal: str, price: float, balance: float, mode: 
     try:
         # risk check: disallow trade if risk manager blocks it (only for live orders)
         try:
-            allow, reason = risk_manager.allow_trade(balance)
+            # Получаем актуальный баланс для проверки лимитов
+            from bots.bybit_client import get_balance
+            actual_balance = get_balance()
+            allow, reason = risk_manager.allow_trade(actual_balance)
         except Exception:
             allow, reason = True, "ok"
         if not allow and not dry_run:
-            return f"⚠️ ТОРГОВЛЯ ОТКЛОНЕНА: {reason}"
+            # Логируем причину отказа от сделки
+            from bots.telegram import notify_warning
+            message = f"TORGOVLYA OTKLORENA: {reason}"
+            notify_warning(message)
+            return message
 
         if mode == "FUTURES":
             qty = max(MIN_QTY, 1)
@@ -66,6 +73,9 @@ def execute_trade(symbol: str, signal: str, price: float, balance: float, mode: 
                     risk_manager.record_trade_result(trade_sim.get("pnl", 0.0))
                 except Exception:
                     pass
+                
+                # Отправляем уведомление о симулируемой сделке
+                notify_trade_open(symbol, signal, price, qty, f"{leverage}x")
                 return (
                     f"[DRY RUN] ✅ FUTURES TRADE (SIMULATED)\n"
                     f"{symbol}\n"
@@ -96,6 +106,8 @@ def execute_trade(symbol: str, signal: str, price: float, balance: float, mode: 
             except Exception:
                 pass
 
+            # Отправляем уведомление о реальной сделке
+            notify_trade_open(symbol, signal, price, qty, f"{leverage}x")
             return (
                 f"✅ FUTURES TRADE EXECUTED\n"
                 f"{symbol}\n"
@@ -140,6 +152,9 @@ def execute_trade(symbol: str, signal: str, price: float, balance: float, mode: 
                     risk_manager.record_trade_result(trade.get("pnl", 0.0))
                 except Exception:
                     pass
+                
+                # Отправляем уведомление о симулируемой сделке
+                notify_trade_open(symbol, signal, price, qty_rounded, "1x")
                 return (
                     f"[DRY RUN] ✅ SPOT TRADE (SIMULATED)\n"
                     f"{symbol}\n"
@@ -169,7 +184,11 @@ def execute_trade(symbol: str, signal: str, price: float, balance: float, mode: 
                 risk_manager.record_trade_result(trade.get("pnl", 0.0))
             except Exception:
                 pass
+            # Обновляем дневную статистику
+            daily_stats.update_stats(trade.get("pnl", 0.0))
 
+            # Отправляем уведомление о реальной сделке
+            notify_trade_open(symbol, signal, price, qty_rounded, "1x")
             return (
                 f"✅ SPOT TRADE\n"
                 f"{symbol}\n"
@@ -180,12 +199,14 @@ def execute_trade(symbol: str, signal: str, price: float, balance: float, mode: 
             )
 
         else:
-            return f"⚠️ UNKNOWN MODE: {mode}"
+            message = f"NEIZVESTNYI REJIM: {mode}"
+            notify_error(message)
+            return message
 
     except Exception as e:
-        err = f"❌ ОШИБКА ({mode})\n{e}"
+        err = f"OSHIbKA ({mode})\n{e}"
         try:
-            send_message(err)
+            notify_error(err)
         except Exception:
             logger.exception("Failed to send error message")
         logger.exception("Trade execution failed")

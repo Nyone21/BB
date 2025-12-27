@@ -6,7 +6,7 @@ TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 
 _last_sent = 0
-_MIN_INTERVAL = 5  # секунд между сообщениями (защита от спама)
+_MIN_INTERVAL = 1  # секунд между сообщениями (уменьшено для более частых отчетов)
 
 def send_message(text: str):
     global _last_sent

@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+from bots.daily_stats import daily_stats
 
 MEMORY_FILE = "data/ai_memory.json"
 
@@ -28,6 +29,10 @@ def save_trade(trade: dict):
     os.makedirs("data", exist_ok=True)
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(memory, f, indent=2)
+    
+    # Обновляем дневную статистику, если есть PnL
+    if "pnl" in trade and trade["pnl"] is not None:
+        daily_stats.update_stats(float(trade["pnl"]))
 
 
 def log_trade(symbol, side, price, pnl):
@@ -77,6 +82,8 @@ def attach_pnl_to_last_trade(pnl: float) -> bool:
             try:
                 with open(MEMORY_FILE, "w", encoding="utf-8") as f:
                     json.dump(memory, f, indent=2)
+                # Обновляем дневную статистику
+                daily_stats.update_stats(float(pnl))
                 return True
             except Exception:
                 return False

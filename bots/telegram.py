@@ -3,9 +3,9 @@ import time
 import requests
 from bots import state
 
-# Определение эмодзи для использования в сообщениях
+# Определение эмодзи для унифицированных уведомлений
 EMOJI_START = "▶️"
-EMOJI_STOP = "⛔"
+EMOJI_STOP = "⏹️"
 EMOJI_LIVE_ON = "🔴"
 EMOJI_LIVE_OFF = "⚪"
 EMOJI_STATUS = "📊"
@@ -13,14 +13,26 @@ EMOJI_BALANCE = "💰"
 EMOJI_TRADES_INFO = "🔍"
 EMOJI_SETTINGS = "⚙️"
 EMOJI_BOT_RUNNING = "🟢"
-EMOJI_BOT_STOPPED = "🚫"
+EMOJI_BOT_STOPPED = "🔴"
 EMOJI_WARNING = "⚠️"
 EMOJI_ERROR = "❌"
 EMOJI_SUCCESS = "✅"
 EMOJI_INFO = "ℹ️"
+EMOJI_TRADE_OPEN = "📈"
+EMOJI_TRADE_CLOSE = "📉"
+EMOJI_RISK_BLOCK = "🛑"
+EMOJI_DAILY_REPORT = "📊"
+EMOJI_ALERT = "🔔"
 
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
+
+# Проверяем, что токен и chat_id не пустые
+if not TG_TOKEN:
+    print("ERROR: TG_TOKEN is not set in environment variables")
+if not TG_CHAT_ID:
+    print("ERROR: TG_CHAT_ID is not set in environment variables")
+
 API_URL = f"https://api.telegram.org/bot{TG_TOKEN}"
 
 def keyboard():
@@ -28,7 +40,7 @@ def keyboard():
         "inline_keyboard": [
             [
                 {"text": "▶️ START", "callback_data": "START"},
-                {"text": "⛔ STOP", "callback_data": "STOP"}
+                {"text": "⏹️ STOP", "callback_data": "STOP"}
             ],
             [
                 {"text": "🔴 Включить LIVE", "callback_data": "ENABLE_LIVE"},
@@ -36,7 +48,7 @@ def keyboard():
             ],
             [
                 {"text": "📊 STATUS", "callback_data": "STATUS"},
-                {"text": "📈 BALANCE", "callback_data": "BALANCE"}
+                {"text": "💰 BALANCE", "callback_data": "BALANCE"}
             ],
             [
                 {"text": "🔍 TRADES INFO", "callback_data": "TRADES_INFO"},
@@ -45,16 +57,90 @@ def keyboard():
         ]
     }
 
-def send_message(text, kb=True):
+def send_message(text, kb=False):
+    # Проверяем, что токен и chat_id установлены перед отправкой сообщения
+    if not TG_TOKEN or not TG_CHAT_ID:
+        print(f"WARNING: Cannot send message, TG_TOKEN or TG_CHAT_ID not set. Message would be: {text}")
+        return
+    
     payload = {
         "chat_id": TG_CHAT_ID,
         "text": text,
-        "parse_mode": "HTML"  # Использование HTML для форматирования
+        "parse_mode": "Markdown"  # Использование Markdown для форматирования
     }
     if kb:
         payload["reply_markup"] = keyboard()
 
+    # Уменьшаем задержку между сообщениями для более частых отчетов
     requests.post(f"{API_URL}/sendMessage", json=payload, timeout=10)
+    # Добавляем небольшую задержку, чтобы избежать блокировки сервером Telegram
+    time.sleep(0.5)
+
+def notify_start(message=""):
+    """Отправить уведомление о запуске бота"""
+    text = f"{EMOJI_ALERT} *START*\n{message}" if message else f"{EMOJI_ALERT} *БОТ ЗАПУЩЕН*"
+    send_message(text, kb=False)
+
+def notify_info(message):
+    """Отправить информационное уведомление"""
+    text = f"{EMOJI_INFO} *INFO*\n{message}"
+    send_message(text, kb=False)
+
+def notify_trade_open(symbol, side, price, qty, leverage="1x"):
+    """Отправить уведомление о открытии сделки"""
+    text = (
+        f"{EMOJI_TRADE_OPEN} *FUTURES TRADE OPENED*\n"
+        f"Symbol: `{symbol}`\n"
+        f"Side: `{side}`\n"
+        f"Price: `{price}`\n"
+        f"Qty: `{qty}`\n"
+        f"Leverage: `{leverage}`"
+    )
+    send_message(text, kb=False)
+
+def notify_trade_close(symbol, side, price, qty, pnl, reason=""):
+    """Отправить уведомление о закрытии сделки"""
+    pnl_sign = "🟢" if pnl >= 0 else "🔴"
+    reason_text = f"\nReason: `{reason}`" if reason else ""
+    text = (
+        f"{EMOJI_TRADE_CLOSE} *FUTURES TRADE CLOSED*\n"
+        f"Symbol: `{symbol}`\n"
+        f"Side: `{side}`\n"
+        f"Price: `{price}`\n"
+        f"Qty: `{qty}`\n"
+        f"PnL: {pnl_sign} `{pnl:.4f} USDT`{reason_text}"
+    )
+    send_message(text, kb=False)
+
+def notify_warning(message):
+    """Отправить предупреждение"""
+    text = f"{EMOJI_WARNING} *WARNING*\n{message}"
+    send_message(text, kb=False)
+
+def notify_error(message):
+    """Отправить сообщение об ошибке"""
+    text = f"{EMOJI_ERROR} *ERROR*\n{message}"
+    send_message(text, kb=False)
+
+def notify_risk_block(message):
+    """Отправить сообщение о блокировке по риску"""
+    text = f"{EMOJI_RISK_BLOCK} *RISK BLOCK*\n{message}"
+    send_message(text, kb=False)
+
+def notify_daily_report(report_data):
+    """Отправить ежедневный отчет"""
+    text = (
+        f"{EMOJI_DAILY_REPORT} *DAILY REPORT*\n"
+        f"Total Trades: `{report_data.get('total_trades', 0)}`\n"
+        f"Wins: `{report_data.get('wins', 0)}`\n"
+        f"Losses: `{report_data.get('losses', 0)}`\n"
+        f"Win Rate: `{report_data.get('winrate', 0):.2f}%`\n"
+        f"Total PnL: `{report_data.get('total_pnl', 0):.4f} USDT`\n"
+        f"Best Trade: `{report_data.get('best_trade', 0):.4f} USDT`\n"
+        f"Worst Trade: `{report_data.get('worst_trade', 0):.4f} USDT`\n"
+        f"Max Drawdown: `{report_data.get('max_drawdown', 0):.4f} USDT`"
+    )
+    send_message(text, kb=False)
 
 
 def send_periodic_report():
@@ -63,6 +149,10 @@ def send_periodic_report():
         from bots.bybit_client import get_balance
         from bots.trade_logger import get_recent_trades
         from bots.risk_manager import get_daily_loss, get_trades_today
+        from bots.daily_stats import daily_stats
+        
+        # Проверяем, не наступило ли новое сутки, и при необходимости сбрасываем статистику
+        daily_stats.check_and_reset_if_new_day()
         
         balance = get_balance()
         trades = get_recent_trades(10)
@@ -74,17 +164,31 @@ def send_periodic_report():
         daily_loss = get_daily_loss()
         trades_today = get_trades_today()
         
-        report = f"{EMOJI_STATUS} <b>РАСШИРЕННЫЙ ОТЧЕТ О БОТЕ (3 мин)</b>\n\n"
-        report += f"{EMOJI_BALANCE} Баланс: <b>{balance:.4f} USDT</b>\n"
-        report += f"{EMOJI_TRADES_INFO} Всего сделок: <b>{len(trades)}</b>\n"
-        report += f"{EMOJI_SUCCESS} Прибыльных: <b>{win_trades}</b>\n"
-        report += f"{EMOJI_ERROR} Убыточных: <b>{loss_trades}</b>\n"
-        report += f"💸 Общий PnL: <b>{total_pnl:.4f} USDT</b>\n"
-        report += f"{EMOJI_ERROR} Дневной убыток: <b>{daily_loss:.4f} USDT</b>\n"
-        report += f"{EMOJI_TRADES_INFO} Сделок сегодня: <b>{trades_today}</b>\n\n"
+        # Получаем текущую дневную статистику
+        current_daily_stats = daily_stats.get_stats()
+        
+        report = f"{EMOJI_STATUS} *INFO*\n\n"
+        report += f"{EMOJI_BALANCE} Баланс: *{balance:.4f} USDT*\n"
+        report += f"{EMOJI_TRADES_INFO} Всего сделок: *{len(trades)}*\n"
+        report += f"{EMOJI_SUCCESS} Прибыльных: *{win_trades}*\n"
+        report += f"{EMOJI_ERROR} Убыточных: *{loss_trades}*\n"
+        report += f"💸 Общий PnL: *{total_pnl:.4f} USDT*\n"
+        report += f"{EMOJI_ERROR} Дневной убыток: *{daily_loss:.4f} USDT*\n"
+        report += f"{EMOJI_TRADES_INFO} Сделок сегодня: *{trades_today}*\n\n"
+        
+        # Добавляем дневную статистику
+        report += f"{EMOJI_DAILY_REPORT} ДНЕВНАЯ СТАТИСТИКА:\n"
+        report += f"📊 Всего сделок: *{current_daily_stats['total_trades']}*\n"
+        report += f"✅ Побед: *{current_daily_stats['wins']}*\n"
+        report += f"❌ Убытков: *{current_daily_stats['losses']}*\n"
+        report += f"📈 Процент прибыльных: *{current_daily_stats['winrate']:.2f}%*\n"
+        report += f"💰 Общий PnL: *{current_daily_stats['total_pnl']:.4f} USDT*\n"
+        report += f"🏆 Лучшая сделка: *{current_daily_stats['best_trade']:.4f} USDT*\n"
+        report += f"📉 Худшая сделка: *{current_daily_stats['worst_trade']:.4f} USDT*\n"
+        report += f"📉 Макс. просадка: *{current_daily_stats['max_drawdown']:.4f} USDT*\n\n"
         
         if trades:
-            report += "<b>Последние сделки:</b>\n"
+            report += "*Последние сделки:*\n"
             for i, trade in enumerate(trades[-3:], 1):  # Показываем последние 3 сделки
                 symbol = trade.get("symbol", "N/A")
                 side = trade.get("side", "N/A")
@@ -132,22 +236,22 @@ def get_trades_info():
 
 def get_settings_info():
     import os
-    info = f"{EMOJI_SETTINGS} <b>ТЕКУЩИЕ НАСТРОЙКИ БОТА:</b>\n"
-    info += f"📊 Режим торговли: <b>{os.getenv('MARKET_TYPE', 'spot')}</b>\n"
-    info += f"{EMOJI_BALANCE} Риск на сделку: <b>{float(os.getenv('RISK_PER_TRADE', '0.01'))*100}%</b>\n"
-    info += f"{EMOJI_ERROR} Макс. дневной убыток: <b>{float(os.getenv('MAX_DAILY_LOSS', '0.05'))*100}%</b>\n"
-    info += f"{EMOJI_TRADES_INFO} Макс. сделок в день: <b>{os.getenv('MAX_TRADES_PER_DAY', '5')}</b>\n"
-    info += f"🎯 Take Profit: <b>{float(os.getenv('TAKE_PROFIT', '0.006'))*100}%</b>\n"
-    info += f"🛑 Stop Loss: <b>{float(os.getenv('STOP_LOSS', '0.003'))*100}%</b>\n"
-    info += f"🔄 Таймфрейм: <b>{os.getenv('TIMEFRAME', '1')}m</b>\n"
-    info += f"📋 Символы: <b>{os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT')}</b>\n"
+    info = f"{EMOJI_SETTINGS} *TEKUWE NASTROIKI BOTA:*\n"
+    info += f"📊 Rejim torgovli: *{os.getenv('MARKET_TYPE', 'spot')}*\n"
+    info += f"{EMOJI_BALANCE} Risk na sdelku: *{float(os.getenv('RISK_PER_TRADE', '0.01'))*100}%*\n"
+    info += f"{EMOJI_ERROR} Maks. dnevnoi ubytk: *{float(os.getenv('MAX_DAILY_LOSS', '0.05'))*100}%*\n"
+    info += f"{EMOJI_TRADES_INFO} Maks. sdelok v den: *{os.getenv('MAX_TRADES_PER_DAY', '5')}*\n"
+    info += f"🎯 Take Profit: *{float(os.getenv('TAKE_PROFIT', '0.006'))*100}%*\n"
+    info += f"🛑 Stop Loss: *{float(os.getenv('STOP_LOSS', '0.003'))*100}%*\n"
+    info += f"🔄 Taimfreim: *{os.getenv('TIMEFRAME', '1')}m*\n"
+    info += f"📋 Simvoly: *{os.getenv('SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT')}*\n"
     
     return info
 
 def get_balance_info():
     from bots.bybit_client import get_balance
     balance = get_balance()
-    return f"{EMOJI_BALANCE} БАЛАНС: <b>{balance:.2f} USDT</b>"
+    return f"{EMOJI_BALANCE} *BALANS: {balance:.2f} USDT*"
 
 
 def send_balance():
@@ -233,6 +337,10 @@ def telegram_polling():
             if current_time - last_report_time >= report_interval:
                 send_periodic_report()
                 last_report_time = current_time
+            
+            # Проверяем, не наступил ли новый день для отправки отчета (в 23:59 UTC)
+            from bots.daily_stats import daily_stats
+            daily_stats.check_and_reset_if_new_day()
 
         except requests.exceptions.Timeout:
             # Обработка таймаута при ожидании обновлений - это нормальное поведение

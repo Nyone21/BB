@@ -127,4 +127,4 @@ def analyze_market(candles: List[List]) -> Tuple[str, float, np.ndarray]:
         if deviation < 0.05:  # Меньше 0.5% - слишком мало для входа
             signal = "HOLD"
     
-    return signal, current_ema, closes
+    return signal, current_ema, closes, highs, lows

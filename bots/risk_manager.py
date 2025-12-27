@@ -1,16 +1,22 @@
 ﻿import os
 import time
 from typing import Tuple
+from bots.telegram import notify_risk_block
 
 RISK_PER_TRADE = float(os.getenv("RISK_PER_TRADE", "0.01"))
-MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS", "0.05"))
+MAX_DAILY_LOSS = float(os.getenv("MAX_DAILY_LOSS", "0.05"))  # в процентах от баланса
+MAX_DAILY_LOSS_USDT = float(os.getenv("MAX_DAILY_LOSS_USDT", "0"))  # фиксированная сумма в USDT (0 = отключено)
 MAX_TRADES_PER_DAY = int(os.getenv("MAX_TRADES_PER_DAY", "5"))
+MAX_CONSECUTIVE_LOSSES = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "3"))
 
 # daily state in-memory (reset every 24h)
 _daily_state = {
     "day_start": int(time.time()),
     "loss": 0.0,
     "trades": 0,
+    "consecutive_losses": 0,
+    "trading_blocked": False,
+    "block_reason": ""
 }
 
 
@@ -19,13 +25,41 @@ def _reset_if_new_day():
         _daily_state["day_start"] = int(time.time())
         _daily_state["loss"] = 0.0
         _daily_state["trades"] = 0
+        _daily_state["consecutive_losses"] = 0
+        _daily_state["trading_blocked"] = False
+        _daily_state["block_reason"] = ""
 
 
 def record_trade_result(pnl: float) -> None:
     """Record trade PnL (negative for loss)."""
     _reset_if_new_day()
-    _daily_state["loss"] += min(0.0, pnl)
+    
+    # Обновляем статистику убытков
+    if pnl < 0:
+        _daily_state["loss"] += pnl
+        _daily_state["consecutive_losses"] += 1
+    else:
+        _daily_state["consecutive_losses"] = 0
+    
     _daily_state["trades"] += 1
+    
+    # Получаем актуальный баланс для проверки лимитов
+    try:
+        from bots.bybit_client import get_balance
+        balance = get_balance()
+    except Exception:
+        # Если не удается получить баланс, используем заглушку
+        balance = 100.0
+    
+    # Проверяем лимиты и блокируем торговлю при необходимости
+    check_daily_limits(balance)
+    
+    # Обновляем дневную статистику
+    try:
+        from bots.daily_stats import daily_stats
+        daily_stats.update_stats(pnl)
+    except ImportError:
+        pass # daily_stats может не быть доступен в некоторых контекстах
 
 
 def get_daily_loss() -> float:
@@ -38,15 +72,62 @@ def get_trades_today() -> int:
     return _daily_state["trades"]
 
 
+def get_consecutive_losses() -> int:
+    _reset_if_new_day()
+    return _daily_state["consecutive_losses"]
+
+
+def check_daily_limits(balance: float) -> Tuple[bool, str]:
+    """Проверить дневные лимиты и при необходимости заблокировать торговлю"""
+    _reset_if_new_day()
+    
+    # Проверяем лимит на дневной убыток (в процентах от баланса)
+    if abs(_daily_state["loss"]) >= MAX_DAILY_LOSS * balance:
+        if not _daily_state["trading_blocked"]:
+            _daily_state["trading_blocked"] = True
+            _daily_state["block_reason"] = "daily loss limit (percentage) reached"
+            notify_risk_block(f"Дневной лимит убытка превышен (по проценту): {_daily_state['loss']:.4f} USDT")
+        return False, "daily loss limit (percentage) reached"
+    
+    # Проверяем лимит на дневной убыток (в фиксированной сумме USDT)
+    if MAX_DAILY_LOSS_USDT > 0 and abs(_daily_state["loss"]) >= MAX_DAILY_LOSS_USDT:
+        if not _daily_state["trading_blocked"]:
+            _daily_state["trading_blocked"] = True
+            _daily_state["block_reason"] = "daily loss limit (fixed amount) reached"
+            notify_risk_block(f"Дневной лимит убытка превышен (по фиксированной сумме): {_daily_state['loss']:.4f} USDT")
+        return False, "daily loss limit (fixed amount) reached"
+    
+    # Проверяем лимит на количество сделок в день
+    if _daily_state["trades"] >= MAX_TRADES_PER_DAY:
+        if not _daily_state["trading_blocked"]:
+            _daily_state["trading_blocked"] = True
+            _daily_state["block_reason"] = "max trades per day reached"
+            notify_risk_block(f"Достигнут лимит на количество сделок в день: {_daily_state['trades']}")
+        return False, "max trades per day reached"
+    
+    # Проверяем лимит на количество последовательных убытков
+    if _daily_state["consecutive_losses"] >= MAX_CONSECUTIVE_LOSSES:
+        if not _daily_state["trading_blocked"]:
+            _daily_state["trading_blocked"] = True
+            _daily_state["block_reason"] = "max consecutive losses reached"
+            notify_risk_block(f"Достигнут лимит на количество последовательных убытков: {_daily_state['consecutive_losses']}")
+        return False, "max consecutive losses reached"
+    
+    return True, "ok"
+
+
 def allow_trade(balance: float) -> Tuple[bool, str]:
     _reset_if_new_day()
+    
     if balance <= 0:
         return False, "no balance"
-    if abs(_daily_state["loss"]) >= MAX_DAILY_LOSS * balance:
-        return False, "daily loss limit reached"
-    if _daily_state["trades"] >= MAX_TRADES_PER_DAY:
-        return False, "max trades per day reached"
-    return True, "ok"
+    
+    # Проверяем, не заблокирована ли торговля
+    if _daily_state["trading_blocked"]:
+        return False, _daily_state["block_reason"]
+    
+    # Проверяем дневные лимиты
+    return check_daily_limits(balance)
 
 
 def compute_trade_amount(balance: float) -> float:
