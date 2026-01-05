@@ -1,5 +1,15 @@
 ﻿# bots/bybit_client.py
 
+"""
+Клиент Bybit API (обертка для обратной совместимости).
+
+ВНИМАНИЕ: Этот модуль использует глобальную сессию для обратной совместимости.
+Для новых проектов используйте bots.core.bybit_client_factory.create_bybit_session().
+
+Этот модуль использует фабрику для создания сессии, но сохраняет
+глобальную переменную session для обратной совместимости.
+"""
+
 import os
 import time
 import logging
@@ -7,10 +17,17 @@ from typing import Any
 
 import requests
 from requests.exceptions import RequestException
-from pybit.unified_trading import HTTP
+
+# Импортируем фабрику для создания сессий
+from bots.core.bybit_client_factory import (
+    get_global_session,
+    get_server_time,
+    SyncedSession
+)
 
 logger = logging.getLogger(__name__)
 
+# Сохраняем для обратной совместимости
 API_KEY = os.getenv("BYBIT_API_KEY")
 API_SECRET = os.getenv("BYBIT_API_SECRET")
 BYBIT_API_BASE = os.getenv("BYBIT_API_BASE", "https://api.bybit.com")
@@ -33,26 +50,9 @@ def _retry_request(func, *args, retries=3, backoff=1, **kwargs):
     raise last_exc
 
 
-def get_server_time():
-    def _call():
-        r = requests.get(f"{BYBIT_API_BASE}/v5/market/time", timeout=5)
-        r.raise_for_status()
-        return int(r.json()["result"]["timeSecond"]) * 1000
-
-    return _retry_request(_call)
-
-
-class SyncedSession(HTTP):
-    def _get_timestamp(self):
-        return get_server_time()
-
-
-session = SyncedSession(
-    api_key=API_KEY,
-    api_secret=API_SECRET,
-    testnet=(os.getenv("BYBIT_TESTNET", "false").lower() in ("1", "true")),
-    recv_window=10000,
-)
+# Глобальная сессия для обратной совместимости (ленивая инициализация)
+# Используется фабрика для создания сессии при первом обращении
+session = get_global_session()
 
 
 def get_balance():
