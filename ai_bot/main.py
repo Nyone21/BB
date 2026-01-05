@@ -12,10 +12,15 @@ AI-бот использует изолированный контекст (BotC
 """
 
 import os
+import sys
 import time
 import traceback
 import threading
 from datetime import datetime
+
+# Добавляем путь к корню проекта для импортов
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from bots.core.bot_context import BotContext
 from bots.core.bybit_client_factory import create_bybit_session
 from bots.core.data_manager import DataManager
