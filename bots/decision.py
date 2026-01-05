@@ -16,24 +16,25 @@ def can_trade(candles):
     s = state.state
 
     # 1. бот выключен
-    if not s["bot_enabled"]:
+    if not s.get("bot_enabled", True):
         return False, "BOT_DISABLED"
 
     # 2. нет сигнала
-    if s["last_signal"] == "HOLD":
+    if s.get("last_signal", "HOLD") == "HOLD":
         return False, "NO_SIGNAL"
 
     # 3. AI не подтверждает
-    if s["last_signal"] != s["ai_signal"]:
+    if s.get("last_signal", "HOLD") != s.get("ai_signal", "HOLD"):
         return False, "AI_DISAGREE"
 
     # 4. недостаточно баланса
-    if s["last_balance"] < MIN_BALANCE:
+    if s.get("last_balance", 0.0) < MIN_BALANCE:
         return False, "LOW_BALANCE"
 
     # 5. кулдаун
-    if s["trades"]:
-        last_trade_time = s["trades"][-1]["time"]
+    trades = s.get("trades", [])
+    if trades:
+        last_trade_time = trades[-1].get("time", 0)
         if time.time() - last_trade_time < COOLDOWN_SEC:
             return False, "COOLDOWN"
 
